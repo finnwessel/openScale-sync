@@ -59,5 +59,11 @@
     <string name="wger_api_token_title">Wger Api token</string>
     <string name="wger_connect_to_wger_button">Connect to Wger</string>
 
+    <string name="athlyze_successful_connected_text">athlyze successful connected</string>
+    <string name="athlyze_not_successful_connected_error">Cannot connect to athlyze</string>
+    <string name="athlyze_server_name_title">Server name</string>
+    <string name="athlyze_api_key_title">athlyze Api key</string>
+    <string name="athlyze_connect_to_athlyze_button">Connect to athlyze</string>
+
     <string name="realtime_sync_update_required_snackbar_text">For Real-time synchronization, please update openScale to version 2.5.5 or to the latest developer version.</string>
 </resources>

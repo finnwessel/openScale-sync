@@ -26,43 +26,6 @@ android {
         includeInBundle = false
     }
 
-    signingConfigs {
-        release {
-            def keystorePropertiesFile = rootProject.file("../../openScale_sync.keystore")
-            def keystoreProperties = new Properties()
-            try {
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-            } catch (FileNotFoundException e) {
-                keystoreProperties = null;
-            }
-
-            if (keystoreProperties != null) {
-                storeFile file(rootDir.getCanonicalPath() + '/' + keystoreProperties['releaseKeyStore'])
-                keyAlias keystoreProperties['releaseKeyAlias']
-                keyPassword keystoreProperties['releaseKeyPassword']
-                storePassword keystoreProperties['releaseStorePassword']
-            }
-        }
-
-        oss {
-            def keystoreOSSPropertiesFile = rootProject.file("../../openScale_oss_sync.keystore")
-            def keystoreOSSProperties = new Properties()
-            try {
-                keystoreOSSProperties.load(new FileInputStream(keystoreOSSPropertiesFile))
-            }
-            catch (FileNotFoundException e) {
-                keystoreOSSProperties = null;
-            }
-
-            if (keystoreOSSProperties != null) {
-                storeFile file(rootDir.getCanonicalPath() + '/' + keystoreOSSProperties['releaseKeyStore'])
-                keyAlias keystoreOSSProperties['releaseKeyAlias']
-                keyPassword keystoreOSSProperties['releaseKeyPassword']
-                storePassword keystoreOSSProperties['releaseStorePassword']
-            }
-        }
-    }
-
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -71,14 +34,14 @@ android {
 
         release {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            //signingConfig signingConfigs.release
         }
 
         oss {
             applicationIdSuffix ".oss"
             versionNameSuffix "-oss"
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.oss
+            //signingConfig signingConfigs.oss
         }
     }
 
@@ -130,4 +93,8 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.squareup.retrofit2:retrofit:2.8.1'
     implementation 'com.squareup.retrofit2:converter-gson:2.8.1'
+}
+
+kotlin {
+    jvmToolchain(17)
 }

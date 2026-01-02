@@ -89,7 +89,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Color.Companion.Blue
 import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -104,7 +103,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
-import androidx.navigation.activity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -112,6 +110,7 @@ import com.health.openscale.sync.BuildConfig
 import com.health.openscale.sync.R
 import com.health.openscale.sync.core.provider.OpenScaleDataProvider
 import com.health.openscale.sync.core.provider.OpenScaleProvider
+import com.health.openscale.sync.core.service.AthlyzeService
 import com.health.openscale.sync.core.service.HealthConnectService
 import com.health.openscale.sync.core.service.MQTTService
 import com.health.openscale.sync.core.service.ServiceInterface
@@ -167,7 +166,8 @@ class MainActivity : AppCompatActivity() {
         syncServiceList = listOf(
             HealthConnectService(applicationContext, sharedPreferences),
             MQTTService(applicationContext, sharedPreferences),
-            WgerService(applicationContext, sharedPreferences)
+            WgerService(applicationContext, sharedPreferences),
+            AthlyzeService(applicationContext, sharedPreferences)
         )
 
         for (syncService in syncServiceList) {
@@ -725,4 +725,3 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-
