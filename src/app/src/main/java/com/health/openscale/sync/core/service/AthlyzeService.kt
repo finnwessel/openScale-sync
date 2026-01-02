@@ -54,6 +54,7 @@ import net.openid.appauth.connectivity.DefaultConnectionBuilder
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import timber.log.Timber
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -99,10 +100,12 @@ class AthlyzeService(
 
     override fun registerActivityResultLauncher(activity: ComponentActivity) {
         authLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            Timber.d("[DEBUG] onActivityResult: resultCode=${result.resultCode} data=${result.data}")
             val data = result.data
             if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
                 val response = AuthorizationResponse.fromIntent(data)
                 val ex = AuthorizationException.fromIntent(data)
+                Timber.d("[DEBUG] AuthorizationResponse: ${response?.jsonSerializeString()} Exception: $ex")
                 
                 if (response != null) {
                     viewModel.setAthlyzeAuthState(AuthState(response, ex))
@@ -115,16 +118,20 @@ class AthlyzeService(
     }
 
     private fun exchangeAuthorizationCode(response: AuthorizationResponse) {
+        Timber.d("[DEBUG] exchangeAuthorizationCode: ${response.jsonSerializeString()}")
         authService.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, ex ->
+            Timber.d("[DEBUG] performTokenRequest result: ${tokenResponse?.jsonSerializeString()} ex: $ex")
             viewModel.athlyzeAuthState.value?.update(tokenResponse, ex)
             viewModel.setAthlyzeAuthState(viewModel.athlyzeAuthState.value)
             
             if (tokenResponse != null) {
+                Timber.d("[DEBUG] Token exchange successful. AccessToken: ${tokenResponse.accessToken}")
                 // Token exchange successful
                 viewModel.viewModelScope.launch {
                     connectAthlyze()
                 }
             } else {
+                Timber.d("[DEBUG] Token exchange failed: ${ex?.message}")
                 setErrorMessage("Token exchange failed: ${ex?.message}")
             }
         }
@@ -170,16 +177,21 @@ class AthlyzeService(
     }
 
     private fun connectAthlyze() {
+        Timber.d("[DEBUG] connectAthlyze")
         if (viewModel.syncEnabled.value) {
             try {
                 val authState = viewModel.athlyzeAuthState.value
+                Timber.d("[DEBUG] AuthState: ${authState?.jsonSerializeString()}")
                 if (authState == null || !authState.isAuthorized) {
+                    Timber.d("[DEBUG] Not authorized")
                     // Not authorized yet
                     return
                 }
 
                 authState.performActionWithFreshTokens(authService) { accessToken, idToken, ex ->
+                    Timber.d("[DEBUG] performActionWithFreshTokens: accessToken=$accessToken idToken=$idToken ex=$ex")
                     if (ex != null) {
+                        Timber.d("[DEBUG] Failed to refresh token: ${ex.message}")
                         setErrorMessage("Failed to refresh token: ${ex.message}")
                         return@performActionWithFreshTokens
                     }
@@ -188,7 +200,10 @@ class AthlyzeService(
                         val newRequest = chain.request().newBuilder()
                             .addHeader("Authorization", "Bearer $accessToken")
                             .build()
-                        chain.proceed(newRequest)
+                        Timber.d("[DEBUG] Request: ${newRequest.url()} Headers: ${newRequest.headers()}")
+                        val response = chain.proceed(newRequest)
+                        Timber.d("[DEBUG] Response: ${response.code()} ${response.message()}")
+                        response
                     }.build()
 
                     athlyzeRetrofit = Retrofit.Builder()
@@ -204,6 +219,7 @@ class AthlyzeService(
                         try {
                             val athlyzeApi: AthlyzeSync.AthlyzeApi = athlyzeRetrofit.create(AthlyzeSync.AthlyzeApi::class.java)
                             val athlyzeEntryList = athlyzeApi.entryList()
+                            Timber.d("[DEBUG] entryList count: ${athlyzeEntryList.count}")
 
                             if (athlyzeEntryList.count >= 0) {
                                 viewModel.setAllPermissionsGranted(true)
@@ -214,17 +230,20 @@ class AthlyzeService(
                                 setErrorMessage(context.getString(R.string.athlyze_not_successful_connected_error))
                             }
                         } catch (e: Exception) {
+                            Timber.d("[DEBUG] Connection failed: ${e.message}")
                             setErrorMessage("Connection failed: ${e.message}")
                         }
                     }
                 }
             } catch (ex: Exception) {
+                Timber.d("[DEBUG] connectAthlyze exception: ${ex.message}")
                 setErrorMessage("${ex.message}")
             }
         }
     }
 
     private fun startAuthorization() {
+        Timber.d("[DEBUG] startAuthorization")
         val serviceConfig = AuthorizationServiceConfiguration(
             Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/auth"), // Replace with actual auth endpoint
             Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/token") // Replace with actual token endpoint

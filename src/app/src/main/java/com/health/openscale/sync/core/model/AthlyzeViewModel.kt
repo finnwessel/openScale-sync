@@ -23,6 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import com.health.openscale.sync.R
 import net.openid.appauth.AuthState
 import org.json.JSONException
+import timber.log.Timber
 
 class AthlyzeViewModel(private val sharedPreferences: SharedPreferences) : ViewModelInterface(sharedPreferences) {
     private val _athlyzeServer = MutableLiveData<String>(sharedPreferences.getString("athlyze_server", "https://athlyze.de/api/v1/"))
@@ -33,9 +34,13 @@ class AthlyzeViewModel(private val sharedPreferences: SharedPreferences) : ViewM
         if (authStateJson != null) {
             try {
                 _athlyzeAuthState.value = AuthState.jsonDeserialize(authStateJson)
+                Timber.d("[DEBUG] Loaded AuthState: ${_athlyzeAuthState.value?.jsonSerializeString()}")
             } catch (e: JSONException) {
+                Timber.d("[DEBUG] Failed to load AuthState: ${e.message}")
                 // Handle error
             }
+        } else {
+            Timber.d("[DEBUG] No saved AuthState found")
         }
     }
 
@@ -49,12 +54,14 @@ class AthlyzeViewModel(private val sharedPreferences: SharedPreferences) : ViewM
 
     val athlyzeServer: LiveData<String> = _athlyzeServer
     fun setAthlyzeServer(value: String) {
+        Timber.d("[DEBUG] setAthlyzeServer: $value")
         this._athlyzeServer.value = value
         sharedPreferences.edit().putString("athlyze_server", value).apply()
     }
 
     val athlyzeAuthState: LiveData<AuthState?> = _athlyzeAuthState
     fun setAthlyzeAuthState(value: AuthState?) {
+        Timber.d("[DEBUG] setAthlyzeAuthState: ${value?.jsonSerializeString()}")
         this._athlyzeAuthState.value = value
         if (value != null) {
             sharedPreferences.edit().putString("athlyze_auth_state", value.jsonSerializeString()).apply()
