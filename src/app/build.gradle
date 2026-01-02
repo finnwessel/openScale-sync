@@ -13,6 +13,9 @@ android {
         versionName "0.4.4"
         archivesBaseName = "openScale-sync-$versionName"
         multiDexEnabled true
+        manifestPlaceholders = [
+                'appAuthRedirectScheme': 'com.health.openscale.sync'
+        ]
     }
 
     buildFeatures {
@@ -93,6 +96,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.squareup.retrofit2:retrofit:2.8.1'
     implementation 'com.squareup.retrofit2:converter-gson:2.8.1'
+    implementation 'net.openid:appauth:0.11.1'
 }
 
 kotlin {

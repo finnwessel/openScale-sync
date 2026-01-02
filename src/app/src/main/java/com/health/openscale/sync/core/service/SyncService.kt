@@ -61,7 +61,8 @@ class SyncService : Service() {
         syncServiceList = arrayOf(
             HealthConnectService(applicationContext, prefs),
             MQTTService(applicationContext, prefs),
-            WgerService(applicationContext, prefs)
+            WgerService(applicationContext, prefs),
+            AthlyzeService(applicationContext, prefs)
         )
 
         CoroutineScope(Dispatchers.Main).launch {

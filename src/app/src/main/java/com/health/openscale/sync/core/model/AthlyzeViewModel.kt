@@ -21,10 +21,23 @@ import android.content.SharedPreferences
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.health.openscale.sync.R
+import net.openid.appauth.AuthState
+import org.json.JSONException
 
 class AthlyzeViewModel(private val sharedPreferences: SharedPreferences) : ViewModelInterface(sharedPreferences) {
     private val _athlyzeServer = MutableLiveData<String>(sharedPreferences.getString("athlyze_server", "https://athlyze.de/api/v1/"))
-    private val _athlyzeApiKey = MutableLiveData<String>(sharedPreferences.getString("athlyze_api_key", ""))
+    private val _athlyzeAuthState = MutableLiveData<AuthState?>()
+
+    init {
+        val authStateJson = sharedPreferences.getString("athlyze_auth_state", null)
+        if (authStateJson != null) {
+            try {
+                _athlyzeAuthState.value = AuthState.jsonDeserialize(authStateJson)
+            } catch (e: JSONException) {
+                // Handle error
+            }
+        }
+    }
 
     override fun getName(): String {
         return "Athlyze"
@@ -40,9 +53,13 @@ class AthlyzeViewModel(private val sharedPreferences: SharedPreferences) : ViewM
         sharedPreferences.edit().putString("athlyze_server", value).apply()
     }
 
-    val athlyzeApiKey: LiveData<String> = _athlyzeApiKey
-    fun setAthlyzeApiKey(value: String) {
-        this._athlyzeApiKey.value = value
-        sharedPreferences.edit().putString("athlyze_api_key", value).apply()
+    val athlyzeAuthState: LiveData<AuthState?> = _athlyzeAuthState
+    fun setAthlyzeAuthState(value: AuthState?) {
+        this._athlyzeAuthState.value = value
+        if (value != null) {
+            sharedPreferences.edit().putString("athlyze_auth_state", value.jsonSerializeString()).apply()
+        } else {
+            sharedPreferences.edit().remove("athlyze_auth_state").apply()
+        }
     }
 }

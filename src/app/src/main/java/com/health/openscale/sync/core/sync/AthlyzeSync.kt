@@ -129,51 +129,51 @@ class AthlyzeSync(private val athlyzeRetrofit: Retrofit) : SyncInterface() {
 
     suspend fun update(measurement: OpenScaleMeasurement) : SyncResult<Unit> {
         try {
-            val atzhlyzeEntryList = atzhlyzeApi.getEntry(atzhlyzeDateFormat.format(measurement.date))
+            val atzhlyzeEntryList = athlyzeApi.getEntry(athlyzeDateFormat.format(measurement.date))
             if (atzhlyzeEntryList.results?.isNotEmpty() == true) {
                 val atzhlyzeId = atzhlyzeEntryList.results[0].id
-                val entry = AtzhlyzeEntry(
-                    date = atzhlyzeDateFormat.format(measurement.date),
+                val entry = AthlyzeEntry(
+                    date = athlyzeDateFormat.format(measurement.date),
                     weight = measurement.weight,
                     fat = measurement.fat,
                     water = measurement.water,
                     muscle = measurement.muscle
                 )
-                val response: Response<Unit> = atzhlyzeApi.update(atzhlyzeId, entry)
+                val response: Response<Unit> = athlyzeApi.update(atzhlyzeId, entry)
                 if (response.isSuccessful) {
                     return SyncResult.Success(Unit)
                 } else {
                     return SyncResult.Failure(SyncResult.ErrorType.API_ERROR,"atzhlyze update response error ${response.errorBody()?.string()}}")
                 }
             } else {
-                return SyncResult.Failure(SyncResult.ErrorType.API_ERROR,"no entry found for date: ${atzhlyzeDateFormat.format(measurement.date)}")
+                return SyncResult.Failure(SyncResult.ErrorType.API_ERROR,"no entry found for date: ${athlyzeDateFormat.format(measurement.date)}")
             }
         } catch (e: Exception) {
             return SyncResult.Failure(SyncResult.ErrorType.UNKNOWN_ERROR,null ,e)
         }
     }
 
-    interface AtzhlyzeApi {
+    interface AthlyzeApi {
         @GET("measurements")
-        suspend fun entryList(): AtzhlyzeEntryList
+        suspend fun entryList(): AthlyzeEntryList
 
         @GET("measurements/get-by-date")
-        suspend fun getEntry(@Query("date") date: String): AtzhlyzeEntryList
+        suspend fun getEntry(@Query("date") date: String): AthlyzeEntryList
 
         @POST("measurements")
-        suspend fun insert(@Body entry: AtzhlyzeEntry): Response<Unit>
+        suspend fun insert(@Body entry: AthlyzeEntry): Response<Unit>
 
         @PUT("measurements/{id}")
         suspend fun update(
             @Path("id") id: Long,
-            @Body entry: AtzhlyzeEntry
+            @Body entry: AthlyzeEntry
         ): Response<Unit>
 
         @DELETE("measurements/{id}")
         suspend fun delete(@Path("id") id: Long) : Response<Unit>
     }
 
-    data class AtzhlyzeEntryList(
+    data class AthlyzeEntryList(
         @SerializedName("count")
         val count: Long = -1,
         @SerializedName("next")
@@ -181,10 +181,10 @@ class AthlyzeSync(private val athlyzeRetrofit: Retrofit) : SyncInterface() {
         @SerializedName("previous")
         val previous: String? = null,
         @SerializedName("results")
-        val results: List<AtzhlyzeEntry>? = null
+        val results: List<AthlyzeEntry>? = null
     )
 
-    data class AtzhlyzeEntry(
+    data class AthlyzeEntry(
         @SerializedName("id")
         val id: Long = 0,
         @SerializedName("date")

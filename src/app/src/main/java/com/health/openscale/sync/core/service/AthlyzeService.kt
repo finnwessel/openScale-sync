@@ -18,8 +18,12 @@
 package com.health.openscale.sync.core.service
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -36,17 +40,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import com.health.openscale.sync.R
 import com.health.openscale.sync.core.datatypes.OpenScaleMeasurement
 import com.health.openscale.sync.core.model.AthlyzeViewModel
 import com.health.openscale.sync.core.model.ViewModelInterface
 import com.health.openscale.sync.core.sync.AthlyzeSync
 import kotlinx.coroutines.launch
+import net.openid.appauth.*
+import net.openid.appauth.AppAuthConfiguration
+import net.openid.appauth.connectivity.ConnectionBuilder
+import net.openid.appauth.connectivity.DefaultConnectionBuilder
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.util.Date
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.*
 
 class AthlyzeService(
     private val context: Context,
@@ -55,6 +66,28 @@ class AthlyzeService(
     private val viewModel: AthlyzeViewModel = AthlyzeViewModel(sharedPreferences)
     private lateinit var athlyzeSync : AthlyzeSync
     private lateinit var athlyzeRetrofit: Retrofit
+    private val authService: AuthorizationService
+    private lateinit var authLauncher: ActivityResultLauncher<Intent>
+
+    init {
+        val builder = AppAuthConfiguration.Builder()
+
+        // NUR im Debug-Modus HTTP erlauben!
+
+        // 1. ConnectionBuilder überschreiben, um HTTP zu erlauben
+        builder.setConnectionBuilder { uri ->
+            URL(uri.toString()).openConnection() as HttpURLConnection
+        }
+
+        // 2. HTTPS-Check für den Issuer (Keycloak URL) deaktivieren
+        builder.setSkipIssuerHttpsCheck(true)
+
+
+        val appAuthConfig = builder.build()
+
+        // 3. Den Service mit dieser Konfiguration erstellen
+        authService = AuthorizationService(context, appAuthConfig)
+    }
 
     override suspend fun init() {
         connectAthlyze()
@@ -62,6 +95,39 @@ class AthlyzeService(
 
     override fun viewModel(): ViewModelInterface {
         return viewModel
+    }
+
+    override fun registerActivityResultLauncher(activity: ComponentActivity) {
+        authLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+                val response = AuthorizationResponse.fromIntent(data)
+                val ex = AuthorizationException.fromIntent(data)
+                
+                if (response != null) {
+                    viewModel.setAthlyzeAuthState(AuthState(response, ex))
+                    exchangeAuthorizationCode(response)
+                } else {
+                    setErrorMessage("Authorization failed: ${ex?.message}")
+                }
+            }
+        }
+    }
+
+    private fun exchangeAuthorizationCode(response: AuthorizationResponse) {
+        authService.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, ex ->
+            viewModel.athlyzeAuthState.value?.update(tokenResponse, ex)
+            viewModel.setAthlyzeAuthState(viewModel.athlyzeAuthState.value)
+            
+            if (tokenResponse != null) {
+                // Token exchange successful
+                viewModel.viewModelScope.launch {
+                    connectAthlyze()
+                }
+            } else {
+                setErrorMessage("Token exchange failed: ${ex?.message}")
+            }
+        }
     }
 
     override suspend fun sync(measurements: List<OpenScaleMeasurement>) : SyncResult<Unit> {
@@ -103,41 +169,77 @@ class AthlyzeService(
         return SyncResult.Failure(SyncResult.ErrorType.PERMISSION_DENIED)
     }
 
-    private suspend fun connectAthlyze() {
+    private fun connectAthlyze() {
         if (viewModel.syncEnabled.value) {
             try {
-                val client = OkHttpClient.Builder().addInterceptor { chain ->
-                    val newRequest = chain.request().newBuilder()
-//                        .addHeader(
-//                            "Authorization",
-//                            "Bearer " + viewModel.athlyzeApiKey.value
-//                        )
+                val authState = viewModel.athlyzeAuthState.value
+                if (authState == null || !authState.isAuthorized) {
+                    // Not authorized yet
+                    return
+                }
+
+                authState.performActionWithFreshTokens(authService) { accessToken, idToken, ex ->
+                    if (ex != null) {
+                        setErrorMessage("Failed to refresh token: ${ex.message}")
+                        return@performActionWithFreshTokens
+                    }
+
+                    val client = OkHttpClient.Builder().addInterceptor { chain ->
+                        val newRequest = chain.request().newBuilder()
+                            .addHeader("Authorization", "Bearer $accessToken")
+                            .build()
+                        chain.proceed(newRequest)
+                    }.build()
+
+                    athlyzeRetrofit = Retrofit.Builder()
+                        .client(client)
+                        .baseUrl(viewModel.athlyzeServer.value!!)
+                        .addConverterFactory(GsonConverterFactory.create())
                         .build()
-                    chain.proceed(newRequest)
-                }.build()
 
-                athlyzeRetrofit = Retrofit.Builder()
-                    .client(client)
-                    .baseUrl(viewModel.athlyzeServer.value!!)
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
+                    athlyzeSync = AthlyzeSync(athlyzeRetrofit)
+                    
+                    // Verify connection
+                    viewModel.viewModelScope.launch {
+                        try {
+                            val athlyzeApi: AthlyzeSync.AthlyzeApi = athlyzeRetrofit.create(AthlyzeSync.AthlyzeApi::class.java)
+                            val athlyzeEntryList = athlyzeApi.entryList()
 
-                athlyzeSync = AthlyzeSync(athlyzeRetrofit)
-                val athlyzeApi: AthlyzeSync.AthlyzeApi = athlyzeRetrofit.create(AthlyzeSync.AthlyzeApi::class.java)
-                val athlyzeEntryList = athlyzeApi.entryList()
-
-                if (athlyzeEntryList.count >= 0) {
-                    viewModel.setAllPermissionsGranted(true)
-                    viewModel.setConnectAvailable(true)
-                    clearErrorMessage()
-                    setInfoMessage(context.getString(R.string.athlyze_successful_connected_text))
-                } else {
-                    setErrorMessage(context.getString(R.string.athlyze_not_successful_connected_error))
+                            if (athlyzeEntryList.count >= 0) {
+                                viewModel.setAllPermissionsGranted(true)
+                                viewModel.setConnectAvailable(true)
+                                clearErrorMessage()
+                                setInfoMessage(context.getString(R.string.athlyze_successful_connected_text))
+                            } else {
+                                setErrorMessage(context.getString(R.string.athlyze_not_successful_connected_error))
+                            }
+                        } catch (e: Exception) {
+                            setErrorMessage("Connection failed: ${e.message}")
+                        }
+                    }
                 }
             } catch (ex: Exception) {
-                setErrorMessage("$ex.message")
+                setErrorMessage("${ex.message}")
             }
         }
+    }
+
+    private fun startAuthorization() {
+        val serviceConfig = AuthorizationServiceConfiguration(
+            Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/auth"), // Replace with actual auth endpoint
+            Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/token") // Replace with actual token endpoint
+        )
+
+        val authRequest = AuthorizationRequest.Builder(
+            serviceConfig,
+            "openscale-sync", // Replace with actual client ID
+            ResponseTypeValues.CODE,
+            Uri.parse("com.health.openscale.sync:/oauth2callback")
+        ).setScope("openid profile email offline_access") // Add offline_access scope
+         .build()
+
+        val authIntent = authService.getAuthorizationRequestIntent(authRequest)
+        authLauncher.launch(authIntent)
     }
 
     @Composable
@@ -168,35 +270,13 @@ class AthlyzeService(
                     )
                 )
             }
-            Column (
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val athlyzeApiKeyState by viewModel.athlyzeApiKey.observeAsState("")
-
-                OutlinedTextField(
-                    enabled = viewModel.syncEnabled.value,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    value = athlyzeApiKeyState,
-                    onValueChange = {
-                        viewModel.setAthlyzeApiKey(it)
-                    },
-                    label = { Text(stringResource(id = R.string.athlyze_api_key_title)) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text
-                    )
-                )
-            }
+            
             Column (
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
-                    activity.lifecycleScope.launch {
-                        connectAthlyze()
-                    }
+                    startAuthorization()
                 },
                     enabled = viewModel.syncEnabled.value)
                 {
