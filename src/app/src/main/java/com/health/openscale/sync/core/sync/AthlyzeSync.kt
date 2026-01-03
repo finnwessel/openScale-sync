@@ -33,10 +33,20 @@ import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.TimeZone
+import java.util.UUID
 
 class AthlyzeSync(private val athlyzeRetrofit: Retrofit) : SyncInterface() {
     private val athlyzeApi : AthlyzeApi = athlyzeRetrofit.create(AthlyzeApi::class.java)
     private val athlyzeDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").apply { timeZone = TimeZone.getDefault() }
+
+    suspend fun getSettings() : SyncResult<AthlyzeSettings> {
+        try {
+            val settings = athlyzeApi.getSettings()
+            return SyncResult.Success(settings)
+        } catch (e: Exception) {
+            return SyncResult.Failure(SyncResult.ErrorType.UNKNOWN_ERROR, null, e)
+        }
+    }
 
     suspend fun fullSync(measurements: List<OpenScaleMeasurement>) : SyncResult<Unit> {
         Timber.d("[DEBUG] fullSync: measurements count=${measurements.size}")
@@ -197,24 +207,32 @@ class AthlyzeSync(private val athlyzeRetrofit: Retrofit) : SyncInterface() {
     }
 
     interface AthlyzeApi {
-        @GET("measurements")
+        @GET("api/settings")
+        suspend fun getSettings(): AthlyzeSettings
+
+        @GET("api/import/measurements")
         suspend fun entryList(): AthlyzeEntryList
 
-        @GET("measurements/get-by-date")
+        @GET("api/import/measurements/get-by-date")
         suspend fun getEntry(@Query("date") date: String): AthlyzeEntryList
 
-        @POST("measurements")
+        @POST("api/import/measurements")
         suspend fun insert(@Body entry: AthlyzeEntry): Response<Unit>
 
-        @PUT("measurements/{id}")
+        @PUT("api/import/measurements/{id}")
         suspend fun update(
-            @Path("id") id: Long,
+            @Path("id") id: UUID,
             @Body entry: AthlyzeEntry
         ): Response<Unit>
 
-        @DELETE("measurements/{id}")
-        suspend fun delete(@Path("id") id: Long) : Response<Unit>
+        @DELETE("api/import/measurements/{id}")
+        suspend fun delete(@Path("id") id: UUID) : Response<Unit>
     }
+
+    data class AthlyzeSettings(
+        @SerializedName("keycloak_base_url")
+        val keycloakBaseUrl: String? = null
+    )
 
     data class AthlyzeEntryList(
         @SerializedName("count")
@@ -229,7 +247,7 @@ class AthlyzeSync(private val athlyzeRetrofit: Retrofit) : SyncInterface() {
 
     data class AthlyzeEntry(
         @SerializedName("id")
-        val id: Long = 0,
+        val id: UUID = UUID.randomUUID(),
         @SerializedName("date")
         val date: String? = null,
         @SerializedName("weight")

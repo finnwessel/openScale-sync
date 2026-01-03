@@ -206,9 +206,14 @@ class AthlyzeService(
                         response
                     }.build()
 
+                    var url = viewModel.athlyzeServer.value!!
+                    if (!url.endsWith("/")) {
+                        url += "/"
+                    }
+
                     athlyzeRetrofit = Retrofit.Builder()
                         .client(client)
-                        .baseUrl(viewModel.athlyzeServer.value!!)
+                        .baseUrl(url)
                         .addConverterFactory(GsonConverterFactory.create())
                         .build()
 
@@ -244,21 +249,58 @@ class AthlyzeService(
 
     private fun startAuthorization() {
         Timber.d("[DEBUG] startAuthorization")
-        val serviceConfig = AuthorizationServiceConfiguration(
-            Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/auth"), // Replace with actual auth endpoint
-            Uri.parse("http://192.168.178.98:8081/realms/athlyze/protocol/openid-connect/token") // Replace with actual token endpoint
-        )
+        val serverUrl = viewModel.athlyzeServer.value
+        if (serverUrl.isNullOrEmpty()) {
+            setErrorMessage("Server URL is missing")
+            return
+        }
 
-        val authRequest = AuthorizationRequest.Builder(
-            serviceConfig,
-            "openscale-sync", // Replace with actual client ID
-            ResponseTypeValues.CODE,
-            Uri.parse("com.health.openscale.sync:/oauth2callback")
-        ).setScope("openid profile email offline_access") // Add offline_access scope
-         .build()
+        viewModel.viewModelScope.launch {
+            try {
+                var url = viewModel.athlyzeServer.value!!
+                if (!url.endsWith("/")) {
+                    url += "/"
+                }
+                // Create a temporary Retrofit instance to fetch settings
+                val tempRetrofit = Retrofit.Builder()
+                    .baseUrl(url)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
 
-        val authIntent = authService.getAuthorizationRequestIntent(authRequest)
-        authLauncher.launch(authIntent)
+                val tempSync = AthlyzeSync(tempRetrofit)
+                val settingsResult = tempSync.getSettings()
+
+                if (settingsResult is SyncResult.Success) {
+                    val keycloakBaseUrl = settingsResult.data.keycloakBaseUrl?.removeSuffix("/")
+                    if (keycloakBaseUrl != null) {
+                        Timber.d("[DEBUG] Fetched Keycloak Base URL: $keycloakBaseUrl")
+
+                        val serviceConfig = AuthorizationServiceConfiguration(
+                            Uri.parse("${keycloakBaseUrl}/realms/athlyze/protocol/openid-connect/auth"),
+                            Uri.parse("${keycloakBaseUrl}/realms/athlyze/protocol/openid-connect/token")
+                        )
+
+                        val authRequest = AuthorizationRequest.Builder(
+                            serviceConfig,
+                            "openscale-sync",
+                            ResponseTypeValues.CODE,
+                            Uri.parse("com.health.openscale.sync:/oauth2callback")
+                        ).setScope("openid profile email offline_access")
+                            .build()
+
+                        val authIntent = authService.getAuthorizationRequestIntent(authRequest)
+                        authLauncher.launch(authIntent)
+                    } else {
+                        setErrorMessage("Keycloak Base URL not found in settings")
+                    }
+                } else {
+                    setErrorMessage("Failed to fetch settings")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error during authorization start")
+                setErrorMessage("Error: ${e.message}")
+            }
+        }
     }
 
     @Composable
